@@ -1,0 +1,48 @@
+name: Update NBA stats
+
+on:
+  schedule:
+    # Every 20 minutes through the US game window (about 6 pm - 2 am Eastern), plus one
+    # morning run to settle the final box scores. GitHub may start these a few minutes late.
+    - cron: "*/20 22-23,0-6 * * *"
+    - cron: "30 10 * * *"
+  workflow_dispatch:
+    inputs:
+      since:
+        description: "Backfill every day from this date (YYYY-MM-DD). Leave empty for a normal refresh."
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-stats
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fetch stats
+        run: |
+          if [ -n "${{ github.event.inputs.since }}" ]; then
+            node scripts/update.mjs --since "${{ github.event.inputs.since }}"
+          else
+            node scripts/update.mjs
+          fi
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          if git diff --cached --quiet; then
+            echo "No changes."
+          else
+            git commit -m "Update stats $(date -u +'%Y-%m-%d %H:%M') UTC"
+            git pull --rebase
+            git push
+          fi
